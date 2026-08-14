@@ -1,0 +1,47 @@
+#######################################
+# Syntax Coloring Map For Pardalote
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+Pardalote	KEYWORD1
+PardaloteClass	KEYWORD1
+PardaloteEncoder	KEYWORD1
+FrameBuilder	KEYWORD1
+Frame	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+begin	KEYWORD2
+run	KEYWORD2
+sendFrame	KEYWORD2
+broadcastFrame	KEYWORD2
+parseFrame	KEYWORD2
+paramInt	KEYWORD2
+paramFloat	KEYWORD2
+paramIsFloat	KEYWORD2
+registerExtension	KEYWORD2
+dispatchExtension	KEYWORD2
+announceAll	KEYWORD2
+disconnectAll	KEYWORD2
+loopAll	KEYWORD2
+ensureWire	KEYWORD2
+addInt	KEYWORD2
+addFloat	KEYWORD2
+addString	KEYWORD2
+finish	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
+PROTOCOL_VERSION_MAJOR	LITERAL1
+PROTOCOL_VERSION_MINOR	LITERAL1
+PARDALOTE_BOARD	LITERAL1
+PARDALOTE_SERIAL	LITERAL1
+ADC_RESOLUTION_BITS	LITERAL1
+INSTALL_EXTENSION	LITERAL1
