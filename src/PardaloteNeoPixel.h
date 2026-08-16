@@ -3,7 +3,7 @@
 // Pardalote NeoPixel Extension
 // Part of Pardalote — version in library.properties
 // by Scott Mitchell
-// GPL-3.0 License
+// GPL-3.0-or-later License
 //
 // Add #include <PardaloteNeoPixel.h> to your sketch.
 // Requires the Adafruit NeoPixel library.

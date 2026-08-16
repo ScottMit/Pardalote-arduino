@@ -1,5 +1,7 @@
 // ==============================================================
 // Pardalote — NeoPixel example
+// https://github.com/ScottMit/Pardalote
+// Copyright (C) 2026 Scott Mitchell — GPL-3.0-or-later. See LICENSE.
 //
 // Requires the Adafruit NeoPixel library (Tools → Manage Libraries).
 //

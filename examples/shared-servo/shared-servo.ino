@@ -1,5 +1,7 @@
 // ==============================================================
-// Pardalote — Shared Servo
+// Pardalote — Shared Servo example
+// https://github.com/ScottMit/Pardalote
+// Copyright (C) 2026 Scott Mitchell — GPL-3.0-or-later. See LICENSE.
 //
 // The SKETCH creates the servo:
 //
@@ -21,7 +23,7 @@
 #include <Pardalote.h>
 #include <PardaloteServo.h>
 
-const int SERVO_PIN = 9;
+const int SERVO_PIN = 9; // e.g. pin 9 for UNO R4, GPIO 18 for ESP32
 
 int pan = -1;                     // logical id, auto assigned by attach()
 unsigned long lastMove = 0;

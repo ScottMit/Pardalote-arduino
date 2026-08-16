@@ -3,7 +3,7 @@
 // Pardalote Ultrasonic Sensor Extension
 // Part of Pardalote — version in library.properties
 // by Scott Mitchell
-// GPL-3.0 License
+// GPL-3.0-or-later License
 //
 // Supports 3-wire (trig+echo on one pin) and 4-wire (HC-SR04 style)
 // sensors. Add #include <PardaloteUltrasonic.h> to your sketch.

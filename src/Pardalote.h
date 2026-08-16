@@ -3,7 +3,7 @@
 // Arduino-side library for the Pardalote project.
 // Part of Pardalote — version in library.properties
 // by Scott Mitchell
-// GPL-3.0 License
+// GPL-3.0-or-later License
 //
 // Minimal sketch:
 //   #include <Pardalote.h>

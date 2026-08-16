@@ -3,7 +3,7 @@
 // Pardalote Stepper Motor Extension
 // Part of Pardalote — version in library.properties
 // by Scott Mitchell
-// GPL-3.0 License
+// GPL-3.0-or-later License
 //
 // Add #include <PardaloteStepper.h> to your sketch — the extension
 // self-registers, no further setup is required.

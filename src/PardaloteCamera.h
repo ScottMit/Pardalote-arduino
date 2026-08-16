@@ -3,7 +3,7 @@
 // Pardalote Camera Extension
 // Part of Pardalote — version in library.properties
 // by Scott Mitchell
-// GPL-3.0 License
+// GPL-3.0-or-later License
 //
 // Streams MJPEG video and serves JPEG snapshots over HTTP from
 // an ESP32 camera module. The browser accesses the stream

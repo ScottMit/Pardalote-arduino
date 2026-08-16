@@ -3,7 +3,7 @@
 // Pardalote Rotary Encoder Extension (quadrature)
 // Part of Pardalote — version in library.properties
 // by Scott Mitchell
-// GPL-3.0 License
+// GPL-3.0-or-later License
 //
 // Quadrature encoders: KY-040 style knobs, optical/magnetic motor
 // shaft encoders. Add #include <PardaloteEncoder.h> to your sketch.

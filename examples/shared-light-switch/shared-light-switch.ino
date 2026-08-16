@@ -1,5 +1,7 @@
 // ==============================================================
-// Pardalote — Shared Control: Light Switch
+// Pardalote — Shared Control: Light Switch example
+// https://github.com/ScottMit/Pardalote
+// Copyright (C) 2026 Scott Mitchell — GPL-3.0-or-later. See LICENSE.
 //
 // An LED on pin 13 is controlled by *both* physical buttons wired to
 // the Arduino *and* on/off buttons in the browser. Either side can flip

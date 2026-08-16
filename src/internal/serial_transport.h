@@ -4,7 +4,7 @@
 // over Serial instead of a WebSocket.
 // Part of Pardalote — version in library.properties
 // by Scott Mitchell
-// GPL-3.0 License
+// GPL-3.0-or-later License
 //
 // A WebSocket gives the protocol two things a raw byte stream does
 // not: message boundaries and reliability. This transport restores

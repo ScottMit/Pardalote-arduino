@@ -3,7 +3,7 @@
 // Pardalote Protocol Constants
 // Part of Pardalote — version in library.properties
 // by Scott Mitchell
-// GPL-3.0 License
+// GPL-3.0-or-later License
 // ==============================================================
 
 #ifndef DEFS_H
@@ -22,7 +22,7 @@
 // Product version — the release humans see. Canonical copies live in
 // library.properties (Arduino) and package.json (JS); this string lets
 // a sketch print what it's running.
-#define PARDALOTE_VERSION "1.0.0"
+#define PARDALOTE_VERSION "1.1.0"
 
 // -------------------------------------------------------------------
 // ADC Resolution

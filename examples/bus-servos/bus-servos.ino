@@ -1,5 +1,7 @@
 // ==============================================================
 // Pardalote — Bus Servo example
+// https://github.com/ScottMit/Pardalote
+// Copyright (C) 2026 Scott Mitchell — GPL-3.0-or-later. See LICENSE.
 //
 // Including <PardaloteBusServo.h> is enough to add serial-bus servo
 // support. The extension self-registers; no further setup is required.
@@ -29,7 +31,6 @@
 
 void setup() {
     Pardalote.begin();
-    // Connect on either USB or WiFi. Moving from USB to WiFi requires a board reset.
 }
 
 void loop() {

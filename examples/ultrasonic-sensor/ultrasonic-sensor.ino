@@ -1,5 +1,7 @@
 // ==============================================================
 // Pardalote — Ultrasonic example
+// https://github.com/ScottMit/Pardalote
+// Copyright (C) 2026 Scott Mitchell — GPL-3.0-or-later. See LICENSE.
 //
 // Supports HC-SR04 and similar sensors, 3-wire or 4-wire.
 //

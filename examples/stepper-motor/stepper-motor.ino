@@ -1,5 +1,7 @@
 // ==============================================================
 // Pardalote — Stepper example
+// https://github.com/ScottMit/Pardalote
+// Copyright (C) 2026 Scott Mitchell — GPL-3.0-or-later. See LICENSE.
 //
 // Including <PardaloteStepper.h> is enough to add stepper support.
 // The extension self-registers; no further setup is required.

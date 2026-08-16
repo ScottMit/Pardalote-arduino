@@ -1,5 +1,7 @@
 // ==============================================================
 // Pardalote — IMU example
+// https://github.com/ScottMit/Pardalote
+// Copyright (C) 2026 Scott Mitchell — GPL-3.0-or-later. See LICENSE.
 //
 // Supports InvenSense MPU-6050/6500/9250/9255 and STMicro
 // LSM6DS3/LSM6DSOX. No third-party library is needed — the

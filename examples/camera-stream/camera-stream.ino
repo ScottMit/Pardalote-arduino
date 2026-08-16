@@ -1,5 +1,7 @@
 // ==============================================================
 // Pardalote — Camera example (ESP32 only)
+// https://github.com/ScottMit/Pardalote
+// Copyright (C) 2026 Scott Mitchell — GPL-3.0-or-later. See LICENSE.
 //
 // Streams MJPEG video and serves JPEG snapshots over HTTP from
 // an ESP32 camera module. PSRAM is required.
