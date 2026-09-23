@@ -119,10 +119,10 @@ void PardaloteClass::_beginWifi() {
     Serial.begin(115200);
     _announceReboot();   // tell a browser still holding the port that we rebooted
 
-    // Boot-watch: arm the USB listen so the config window can catch a takeover
-    // probe. If the browser opened the port (which DTR-resets an ESP32 into this
-    // boot) and is probing with takeover intent, we skip WiFi entirely — no 5 s
-    // window wait, no failed-network timeouts, ~1 s to serial instead of ~10.
+    // Boot-watch: arm the USB listen so the config menu and the WiFi connect
+    // cycle can catch a takeover probe. If the browser opened the port (which
+    // DTR-resets an ESP32 into this boot) and is probing with takeover intent,
+    // the in-progress connect attempt aborts and we go serial.
     _bootWatch = _serialListen;
     _bootTakeover = false;
     if (_bootWatch) _serialT.beginListen(_serialListenTrampoline);
@@ -139,10 +139,8 @@ void PardaloteClass::_beginWifi() {
 
     _platformInit();
 
-    // Keep watching USB through the (blocking) WiFi connect. A takeover during a
-    // slow or unreachable connect aborts it and goes serial too — covering the
-    // case where the boot-watch window was missed because something else held
-    // the port during boot (e.g. the Arduino IDE Serial Monitor). _bootWatch is
+    // Keep watching USB through the (blocking) WiFi connect cycle. A takeover
+    // during a slow or unreachable connect aborts it and goes serial. _bootWatch is
     // still set, so _handleListenMessage flags _bootTakeover rather than running
     // the runtime switch (whose WiFi teardown assumes the WS server is up).
     if (!wifiConfigConnect(_wifiStore, probe)) {

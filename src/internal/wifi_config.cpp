@@ -227,7 +227,6 @@ void wifiConfigInit(WifiStore& s, PardaloteBootProbe probe) {
     // Loop until at least one network is available. If secrets.h
     // credentials are bound, we always have at least one option,
     // so skip the forced config loop even when EEPROM is empty.
-    bool cameFromConfig = false;
     if (_pardaloteSecrets.ssid) {
         if (_wifiCount(s) == 0) {
             Serial.println(F("No EEPROM networks stored."));
@@ -238,49 +237,31 @@ void wifiConfigInit(WifiStore& s, PardaloteBootProbe probe) {
             // A takeover here sets _bootTakeover via `probe`; return so _beginWifi
             // sees it and starts serial instead of looping (still 0 networks).
             if (!_wifiEnterConfig(s, probe)) return;
-            cameFromConfig = true;
         }
     }
 
     _wifiShow(s);
-
-    // Skip the config window if we just came from it.
-    if (!cameFromConfig) {
-        Serial.println(F("Press 'w' within 5 seconds to configure WiFi (or connect over USB)..."));
-        t = millis();
-        bool done = false;
-        while (!done && millis() - t < 5000) {
-            // Drain everything available each pass (not one byte per delay) so a
-            // USB takeover envelope isn't lost to a full FIFO.
-            while (Serial.available()) {
-                uint8_t b = (uint8_t)Serial.read();
-                if (probe) {
-                    int ev = probe(b);
-                    if (ev == 2) { done = true; break; }   // USB takeover — the core skips WiFi
-                    // ev == 1 is a 'w' (enter config); ev == 3 is other loose text
-                    // (ignored here). A takeover inside config sets _bootTakeover,
-                    // which _beginWifi checks after this returns.
-                    if (ev == 1) { _wifiEnterConfig(s, probe); done = true; break; }
-                } else if (b == 'w') {
-                    _wifiEnterConfig(s); done = true; break;
-                }
-            }
-            if (!done) delay(5);
-        }
-    }
+    // No boot window: wifiConfigConnect starts trying networks straight away and
+    // watches for 'w' (and a USB takeover) throughout.
 }
 
-// Wait up to `ms` for WiFi to connect, draining USB for a takeover along the
-// way (so a blocking connect can be interrupted). Returns:
-//   1 = WiFi connected, 2 = USB takeover, 0 = timed out (not connected).
-static int _waitConnectOrTakeover(unsigned long ms, PardaloteBootProbe probe) {
+// Wait up to `ms` for WiFi to connect, draining Serial along the way so a
+// blocking connect can be interrupted by a 'w' keystroke or a USB takeover.
+// Returns: 1 = WiFi connected, 2 = USB takeover, 3 = 'w' (open config menu),
+//          0 = timed out (not connected).
+static int _waitConnectOrInterrupt(unsigned long ms, PardaloteBootProbe probe) {
     unsigned long t = millis() + ms;
     while (millis() < t) {
         if (WiFi.status() == WL_CONNECTED) return 1;
-        if (probe) {
-            // Drain fully each pass so a takeover envelope isn't lost to the FIFO.
-            while (Serial.available()) {
-                if (probe((uint8_t)Serial.read()) == 2) return 2;
+        // Drain fully each pass so a takeover envelope isn't lost to the FIFO.
+        while (Serial.available()) {
+            uint8_t b = (uint8_t)Serial.read();
+            if (probe) {
+                int ev = probe(b);
+                if (ev == 2) return 2;
+                if (ev == 1) return 3;
+            } else if (b == 'w') {
+                return 3;
             }
         }
         delay(20);
@@ -289,8 +270,28 @@ static int _waitConnectOrTakeover(unsigned long ms, PardaloteBootProbe probe) {
 }
 
 // -------------------------------------------------------------------
-// wifiConfigConnect — tries secrets.h first, then EEPROM entries.
+// wifiConfigConnect — cycles secrets.h then EEPROM entries, forever,
+// until one connects. 'w' at any point pauses the cycle for the config
+// menu; exiting it ('x') restarts the cycle from the top.
 // -------------------------------------------------------------------
+
+// Try one network. Returns the _waitConnectOrInterrupt result.
+static int _wifiTry(const char* label, const char* ssid, const char* pass,
+                    PardaloteBootProbe probe) {
+    Serial.println(F("Press 'w' to configure WiFi (or connect over USB)"));
+    Serial.print(label);
+    Serial.println(ssid);
+    if (pass) WiFi.begin(ssid, pass);
+    else      WiFi.begin(ssid);
+    int r = _waitConnectOrInterrupt(10000, probe);
+    if (r == 0) Serial.println(F("Failed."));
+    if (r != 1) {
+        WiFi.disconnect();   // drop the failed / aborted association attempt
+        delay(200);
+    }
+    return r;
+}
+
 bool wifiConfigConnect(WifiStore& s, PardaloteBootProbe probe) {
 #ifdef PLATFORM_UNO_R4
     if (WiFi.status() == WL_NO_MODULE) {
@@ -300,40 +301,36 @@ bool wifiConfigConnect(WifiStore& s, PardaloteBootProbe probe) {
 #endif
 
     for (;;) {
+        // Nothing to try (e.g. every network deleted in the menu) — stay in config.
+        if (!_pardaloteSecrets.ssid && _wifiCount(s) == 0) {
+            Serial.println(F("No WiFi networks stored."));
+            if (!_wifiEnterConfig(s, probe)) return false;   // USB takeover → serial
+            continue;
+        }
 
-        // Try compile-time credentials first (if bound)
-        if (_pardaloteSecrets.ssid) {
-            Serial.print(F("Trying (secrets.h): "));
-            Serial.println(_pardaloteSecrets.ssid);
-            if (_pardaloteSecrets.pass) {
-                WiFi.begin(_pardaloteSecrets.ssid, _pardaloteSecrets.pass);
+        // One pass: secrets.h first (if bound), then EEPROM slots in order.
+        // Slot -1 is secrets.h.
+        int r = 0;
+        for (int i = -1; i < WIFI_MAX_NETS; i++) {
+            if (i < 0) {
+                if (!_pardaloteSecrets.ssid) continue;
+                r = _wifiTry("Trying (secrets.h): ", _pardaloteSecrets.ssid,
+                             _pardaloteSecrets.pass, probe);
             } else {
-                WiFi.begin(_pardaloteSecrets.ssid);
+                if (!s.nets[i].valid) continue;
+                r = _wifiTry("Trying: ", s.nets[i].ssid, s.nets[i].pass, probe);
             }
-            int r = _waitConnectOrTakeover(10000, probe);
-            if (r == 1) return true;
-            if (r == 2) return false;   // USB takeover — caller starts serial
-            Serial.println(F("Failed."));
-            WiFi.disconnect();
-            delay(200);
+            if (r != 0) break;
         }
 
-        // Try EEPROM-stored networks in order
-        for (int i = 0; i < WIFI_MAX_NETS; i++) {
-            if (!s.nets[i].valid) continue;
-            Serial.print(F("Trying: "));
-            Serial.println(s.nets[i].ssid);
-            WiFi.begin(s.nets[i].ssid, s.nets[i].pass);
-            int r = _waitConnectOrTakeover(10000, probe);
-            if (r == 1) return true;
-            if (r == 2) return false;   // USB takeover — caller starts serial
-            Serial.println(F("Failed."));
-            WiFi.disconnect();
-            delay(200);
+        if (r == 1) return true;
+        if (r == 2) return false;   // USB takeover — caller starts serial
+        if (r == 3) {
+            // 'w' — connecting is paused until the menu exits, then the pass restarts.
+            if (!_wifiEnterConfig(s, probe)) return false;   // USB takeover in config
+            continue;
         }
-
-        Serial.println(F("Could not connect to any network."));
-        if (!_wifiEnterConfig(s, probe)) return false;   // USB takeover in config → serial
+        Serial.println(F("Could not connect to any network — retrying."));
     }
 }
 

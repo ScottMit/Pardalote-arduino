@@ -17,12 +17,12 @@
 // MAJOR product release); MINOR marks backward-compatible additions.
 // Independent of the product version below.
 #define PROTOCOL_VERSION_MAJOR 1
-#define PROTOCOL_VERSION_MINOR 0
+#define PROTOCOL_VERSION_MINOR 1   // +CMD_*_GESTURE_STATE (Ar→JS gesture-active broadcast)
 
 // Product version — the release humans see. Canonical copies live in
 // library.properties (Arduino) and package.json (JS); this string lets
 // a sketch print what it's running.
-#define PARDALOTE_VERSION "1.1.0"
+#define PARDALOTE_VERSION "1.2.0"
 
 // -------------------------------------------------------------------
 // ADC Resolution
@@ -221,6 +221,16 @@
 #define CMD_SERVO_GESTURE       0x58  // JS→Ar (global): payload = servo channel blocks (see above)
 #define CMD_STEPPER_GESTURE     0x59  // JS→Ar (global): stepper channel blocks — MODE_EASED segment player
 #define CMD_BUSSERVO_GESTURE    0x5A  // JS→Ar (global): bus-servo channel blocks — feedback-sequenced segments
+
+// Gesture-active state (Ar→JS, unsolicited): [id, active]. Broadcast when an
+// actuator's segment schedule STARTS (1) and ENDS (0) — completion OR a
+// superseding write that cancels it — so browsers can show "gesturing" and a
+// reconnecting browser learns it via announce(). Symmetric: fires for gestures
+// authored by JS OR by the sketch, and carries EXISTENCE only, never the
+// segment structure. 0x64–0x66 are the next globally-free codes.
+#define CMD_SERVO_GESTURE_STATE    0x64  // Ar→JS: [id, active(0|1)]
+#define CMD_STEPPER_GESTURE_STATE  0x65  // Ar→JS: [id, active(0|1)]
+#define CMD_BUSSERVO_GESTURE_STATE 0x66  // Ar→JS: [id, active(0|1)]
 
 // Gesture channel flags (defs.h ↔ pardalote.js must agree).
 #define GESTURE_FLAG_ABSOLUTE   0x01  // value is an absolute target, not a relative delta

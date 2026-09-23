@@ -4,11 +4,57 @@
 // ==============================================================
 
 #include "extensions.h"
+#include "gesture.h"
 #include <Wire.h>
 
 static ExtEntry _extRegistry[MAX_EXTENSIONS];
 static uint8_t  _numExtensions   = 0;
 static bool     _wireInitialised = false;
+
+// Gesture-starter registry — one entry per gesture-capable device type,
+// populated by INSTALL_GESTURE during static init. Mirrors the extension
+// registry above so the PardaloteGesture builder can start a gesture on
+// any actuator type by DEVICE_* id, with no dependency on the classes.
+struct GestureEntry { uint16_t deviceId; GestureStarter start; };
+static GestureEntry _gestureRegistry[MAX_EXTENSIONS];
+static uint8_t      _numGestureStarters = 0;
+
+void registerGestureStarter(uint16_t deviceId, GestureStarter start) {
+    if (_numGestureStarters < MAX_EXTENSIONS)
+        _gestureRegistry[_numGestureStarters++] = { deviceId, start };
+    // Cannot use Serial here — static-init runs before Serial.begin().
+}
+
+void startGestureFor(uint16_t deviceId, int id, const PardaloteSeg* segs,
+                     uint8_t count, uint8_t flags, uint32_t startMs, uint32_t padToMs,
+                     const PardaloteGestureMod& mod) {
+    for (uint8_t i = 0; i < _numGestureStarters; i++) {
+        if (_gestureRegistry[i].deviceId == deviceId) {
+            _gestureRegistry[i].start(id, segs, count, flags, startMs, padToMs, mod);
+            return;
+        }
+    }
+}
+
+// Immediate-write registry — the write() half of the coordinated builder
+// (see gesture.h). Same shape as the gesture-starter registry.
+struct WriterEntry { uint16_t deviceId; ImmediateWriter write; };
+static WriterEntry _writerRegistry[MAX_EXTENSIONS];
+static uint8_t     _numWriters = 0;
+
+void registerImmediateWriter(uint16_t deviceId, ImmediateWriter write) {
+    if (_numWriters < MAX_EXTENSIONS)
+        _writerRegistry[_numWriters++] = { deviceId, write };
+}
+
+void writeImmediateFor(uint16_t deviceId, int id, int32_t target) {
+    for (uint8_t i = 0; i < _numWriters; i++) {
+        if (_writerRegistry[i].deviceId == deviceId) {
+            _writerRegistry[i].write(id, target);
+            return;
+        }
+    }
+}
 
 void registerExtension(uint16_t        deviceId,
                        ExtHandler      handle,

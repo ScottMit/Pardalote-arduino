@@ -53,6 +53,7 @@ private:
     inline static bool          _attached[MAX_STEPPERS] = {};
     inline static Mode          _mode[MAX_STEPPERS]     = {};
     inline static bool          _wasRunning[MAX_STEPPERS] = {};
+    inline static bool          _gestureActive[MAX_STEPPERS] = {};   // last-broadcast gesturing state
     inline static uint32_t      _stopPrevMs[MAX_STEPPERS] = {};   // MODE_STOPPING ramp timebase
 
     // Stored attach params so announce() can replay them to a fresh client.
@@ -123,6 +124,7 @@ private:
     inline static uint8_t  _segIndex[MAX_STEPPERS]   = {};   // current segment
     inline static uint8_t  _segFlags[MAX_STEPPERS]   = {};   // GESTURE_FLAG_* (reference frame, loop)
     inline static uint8_t  _curveNow[MAX_STEPPERS]   = {};   // easing id of the current segment
+    inline static PardaloteGestureDone _onDone[MAX_STEPPERS] = {};   // sketch whenDone() callback
     inline static int32_t  _segFromPos[MAX_STEPPERS] = {};   // captured position at segment start
     inline static int32_t  _segTarget[MAX_STEPPERS]  = {};   // segment end position (clamped)
     inline static uint32_t _segStartMs[MAX_STEPPERS] = {};   // segment timebase (start+dur, drift-free)
@@ -345,6 +347,26 @@ private:
         fb.addInt(id);
         fb.addInt(s->currentPosition());
         Pardalote.broadcastFrame(fb);
+        if (_onDone[id]) _onDone[id](id);     // sketch whenDone() hook (gesture-only path)
+    }
+
+    // Gesture-active state (Ar→JS, existence only): broadcast on the _segCount
+    // 0<->positive edge so browsers reflect "gesturing" for JS- OR sketch-
+    // authored gestures, and however they end (see loop()).
+    static void sendGestureState(uint8_t clientNum, int id, uint8_t active) {
+        FrameBuilder fb;
+        fb.begin(CMD_STEPPER_GESTURE_STATE, DEVICE_STEPPER);
+        fb.addInt(id);
+        fb.addInt(active);
+        if (clientNum == 0xFF) Pardalote.broadcastFrame(fb);
+        else                   Pardalote.sendFrame(clientNum, fb);
+    }
+    static void updateGestureState(int id) {
+        bool active = _segCount[id] > 0;
+        if (active != _gestureActive[id]) {
+            _gestureActive[id] = active;
+            sendGestureState(0xFF, id, active ? 1 : 0);
+        }
     }
 
     // Abandon a running gesture WITHOUT a DONE frame (a new explicit motion
@@ -357,6 +379,57 @@ private:
     }
 
 public:
+    // Compose-and-play a segment schedule from the sketch — the board-side
+    // gesture() (see internal/gesture.h). The same code the CMD_STEPPER_GESTURE
+    // wire path runs, minus the byte unpack. Registered as the DEVICE_STEPPER
+    // starter for the coordinated PardaloteGesture builder. padToMs appends a
+    // trailing hold so short lanes arrive with the longest.
+    static void startGesture(int id, const PardaloteSeg* segs, uint8_t count,
+                             uint8_t flags, uint32_t startMs, uint32_t padToMs = 0,
+                             const PardaloteGestureMod& mod = PardaloteGestureMod()) {
+        if (!validId(id) || !_attached[id] || !_steppers[id] || !segs || count == 0) return;
+        _homing[id] = HOME_IDLE;                         // a gesture supersedes homing
+        uint8_t  n     = count > MAX_STEPPER_SEGMENTS ? MAX_STEPPER_SEGMENTS : count;
+        uint32_t total = 0;
+        for (uint8_t i = 0; i < n; i++) {
+            _segs[id][i].curve = segs[i].curve;
+            _segs[id][i].dur   = segs[i].dur ? segs[i].dur : 1;
+            _segs[id][i].value = segs[i].value;
+            total += _segs[id][i].dur;
+        }
+        if (padToMs > total && n < MAX_STEPPER_SEGMENTS) {   // trailing hold → arrive together
+            uint32_t padMs = padToMs - total;
+            _segs[id][n].curve = CURVE_LINEAR;
+            _segs[id][n].dur   = padMs > 0xFFFF ? 0xFFFF : (uint16_t)padMs;
+            _segs[id][n].value = (flags & GESTURE_FLAG_ABSOLUTE) ? _segs[id][n - 1].value : 0;
+            n++;
+        }
+        n = pardaloteApplyModsInPlace(_segs[id], n, flags, mod);   // scale · speed · crop
+        if (n == 0) { _segCount[id] = 0; return; }                 // cropped to nothing
+        _segCount[id] = n;
+        _segFlags[id] = flags;
+        loadStepperSegment(id, 0, startMs);
+    }
+
+    // Register a whenDone() callback (nullptr clears it).
+    static void setOnGestureDone(int id, PardaloteGestureDone cb) {
+        if (validId(id)) _onDone[id] = cb;
+    }
+
+    // Immediate move to an absolute position — the DEVICE_STEPPER
+    // ImmediateWriter for Pardalote.write(). Mirrors CMD_STEPPER_MOVE_TO
+    // (cancels homing + any gesture, clamps, restores the speed cap) + echoes.
+    static void writeNow(int id, int32_t target) {
+        if (!validId(id) || !_attached[id] || !_steppers[id]) return;
+        cancelHoming(id);
+        cancelEased(id);
+        int32_t t = clampTarget(id, target);
+        _mode[id] = MODE_POSITION;
+        _steppers[id]->setMaxSpeed(_maxSpeed[id]);   // a timed move may have raised it
+        _steppers[id]->moveTo(t);
+        echoTarget(id);
+    }
+
     // -------------------------------------------------------------------
     // Sketch-facing read accessors (used by the PardaloteStepper object).
     // -------------------------------------------------------------------
@@ -1019,6 +1092,10 @@ public:
             for (uint8_t c = 0; c < PARDALOTE_MAX_CLIENTS; c++)
                 if (p.gate(c, pos, now)) sendReadTo(c, p.instance);
         }
+
+        // Gesture-active edge (start / finish / superseding move).
+        for (int i = 0; i < MAX_STEPPERS; i++)
+            if (_attached[i] || _gestureActive[i]) updateGestureState(i);
     }
 
     // Client disconnect — drop its read registrations.
@@ -1110,6 +1187,9 @@ public:
                 ft.addInt(i); ft.addInt(_steppers[i]->targetPosition());
                 Pardalote.sendFrame(clientNum, ft);
             }
+
+            // Tell a reconnecting browser this stepper is mid-gesture (existence).
+            if (_gestureActive[i]) sendGestureState(clientNum, i, 1);
         }
     }
 };
@@ -1171,6 +1251,18 @@ public:
     void stop(int id)                const { Pardalote.command(DEVICE_STEPPER, CMD_STEPPER_STOP, id); }
     void hardStop(int id)            const { Pardalote.command(DEVICE_STEPPER, CMD_STEPPER_HARD_STOP, id); }
 
+    // gesture(id, segs, count, flags?) — play an eased SEGMENT SCHEDULE on the
+    // board's own clock, the sketch-side twin of JS stepper.gesture(). segs is
+    // a PardaloteSeg[] (steps; absolute by default, flags = 0 for relative). For
+    // coordinated multi-actuator motion use Pardalote.gesture().
+    void gesture(int id, const PardaloteSeg* segs, uint8_t count,
+                 uint8_t flags = GESTURE_FLAG_ABSOLUTE,
+                 const PardaloteGestureMod& mod = PardaloteGestureMod()) const {
+        StepperExt::startGesture(id, segs, count, flags, millis(), 0, mod);
+    }
+    // onGestureDone(id, cb) — board-side whenDone(): cb(id) on the last segment.
+    void onGestureDone(int id, PardaloteGestureDone cb) const { StepperExt::setOnGestureDone(id, cb); }
+
     // Configure a hardware limit switch (end: LIMIT_MIN / LIMIT_MAX;
     // trigger: LOW (default, internal pull-up, switch to GND) or HIGH).
     // Pin -1 clears the switch. Echoed to browsers so their record syncs.
@@ -1207,5 +1299,12 @@ inline PardaloteStepperAccess PardaloteStepper;
 // hook and StepperExt::loop for the per-iteration loop hook.
 INSTALL_EXTENSION(DEVICE_STEPPER, StepperExt::handle, StepperExt::announce,
                   StepperExt::disconnect, StepperExt::loop)
+
+// Register the board-side gesture starter so Pardalote.gesture() can drive
+// steppers in a coordinated group by DEVICE_STEPPER id (see internal/gesture.h).
+INSTALL_GESTURE(DEVICE_STEPPER, StepperExt::startGesture)
+
+// Register the immediate writer so Pardalote.write() can drive steppers.
+INSTALL_WRITER(DEVICE_STEPPER, StepperExt::writeNow)
 
 #endif

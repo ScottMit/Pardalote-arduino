@@ -52,6 +52,7 @@ private:
 
     // On-board timed-move interpolation state (see loop()).
     inline static bool     _moving[MAX_SERVOS]     = {};
+    inline static bool     _gestureActive[MAX_SERVOS] = {};   // last-broadcast gesturing state
     inline static int16_t  _fromAngle[MAX_SERVOS]  = {};
     inline static int16_t  _toAngle[MAX_SERVOS]    = {};
     inline static uint32_t _startMs[MAX_SERVOS]    = {};
@@ -76,6 +77,7 @@ private:
     inline static uint8_t _segIndex[MAX_SERVOS] = {};   // current segment
     inline static uint8_t _segFlags[MAX_SERVOS] = {};   // GESTURE_FLAG_* (reference frame, loop)
     inline static uint8_t _curveNow[MAX_SERVOS] = {};   // easing id of the current segment
+    inline static PardaloteGestureDone _onDone[MAX_SERVOS] = {};   // sketch whenDone() callback
 
     static bool validId(int id) { return id >= 0 && id < MAX_SERVOS; }
 
@@ -103,9 +105,11 @@ private:
     // End a running gesture (or single timed move): land, drop the schedule,
     // tell the browser once via the existing DONE frame.
     static void finishGesture(int id) {
+        bool wasGesture = _segCount[id] > 0;   // vs a plain writeTimed (_segCount == 0)
         _moving[id]   = false;
         _segCount[id] = 0;
         broadcastDone(id, _angles[id]);
+        if (wasGesture && _onDone[id]) _onDone[id](id);   // sketch whenDone() hook
     }
 
     // Periodic reads — per-client registration + gating.
@@ -164,6 +168,26 @@ private:
         Pardalote.broadcastFrame(fb);
     }
 
+    // Broadcast gesture-active state (existence, never structure). Called on the
+    // _segCount 0<->positive edge (see loop()), so browsers reflect "gesturing"
+    // whether the schedule was authored by JS or the sketch, and however it ends.
+    static void sendGestureState(uint8_t clientNum, int id, uint8_t active) {
+        FrameBuilder fb;
+        fb.begin(CMD_SERVO_GESTURE_STATE, DEVICE_SERVO);
+        fb.addInt(id);
+        fb.addInt(active);
+        if (clientNum == 0xFF) Pardalote.broadcastFrame(fb);
+        else                   Pardalote.sendFrame(clientNum, fb);
+    }
+    // Detect the gesturing edge for one servo and broadcast on change.
+    static void updateGestureState(int id) {
+        bool active = _segCount[id] > 0;
+        if (active != _gestureActive[id]) {
+            _gestureActive[id] = active;
+            sendGestureState(0xFF, id, active ? 1 : 0);
+        }
+    }
+
 public:
     // -------------------------------------------------------------------
     // Sketch-facing read accessors (used by the PardaloteServo object).
@@ -176,6 +200,55 @@ public:
         for (int i = 0; i < MAX_SERVOS && n < max; i++) if (_attached[i]) out[n++] = i;
         return n;
     }
+    // Compose-and-play a segment schedule from the sketch — the board-side
+    // gesture() (see internal/gesture.h). The same code the CMD_SERVO_GESTURE
+    // wire path runs, minus the byte unpack, so a board-authored gesture plays
+    // identically to a JS-authored one. Registered as the DEVICE_SERVO starter
+    // so the coordinated PardaloteGesture builder reaches it. padToMs (from a
+    // group) appends a trailing hold so short lanes arrive with the longest.
+    static void startGesture(int id, const PardaloteSeg* segs, uint8_t count,
+                             uint8_t flags, uint32_t startMs, uint32_t padToMs = 0,
+                             const PardaloteGestureMod& mod = PardaloteGestureMod()) {
+        if (!validId(id) || !_attached[id] || !segs || count == 0) return;
+        uint8_t  n     = count > MAX_SERVO_SEGMENTS ? MAX_SERVO_SEGMENTS : count;
+        uint32_t total = 0;
+        for (uint8_t i = 0; i < n; i++) {
+            _segs[id][i].curve = segs[i].curve;
+            _segs[id][i].dur   = segs[i].dur ? segs[i].dur : 1;
+            _segs[id][i].value = segs[i].value;
+            total += _segs[id][i].dur;
+        }
+        if (padToMs > total && n < MAX_SERVO_SEGMENTS) {   // trailing hold → arrive together
+            uint32_t padMs = padToMs - total;
+            _segs[id][n].curve = CURVE_LINEAR;
+            _segs[id][n].dur   = padMs > 0xFFFF ? 0xFFFF : (uint16_t)padMs;
+            _segs[id][n].value = (flags & GESTURE_FLAG_ABSOLUTE) ? _segs[id][n - 1].value : 0;
+            n++;
+        }
+        n = pardaloteApplyModsInPlace(_segs[id], n, flags, mod);   // scale · speed · crop
+        if (n == 0) { _segCount[id] = 0; return; }                 // cropped to nothing
+        _segCount[id] = n;
+        _segFlags[id] = flags;
+        loadSegment(id, 0, startMs);
+    }
+
+    // Register a whenDone() callback (nullptr clears it).
+    static void setOnGestureDone(int id, PardaloteGestureDone cb) {
+        if (validId(id)) _onDone[id] = cb;
+    }
+
+    // Immediate write to an absolute angle — the DEVICE_SERVO ImmediateWriter
+    // for the coordinated Pardalote.write() builder. Mirrors CMD_SERVO_WRITE
+    // (cancels any gesture, clamps) + echoes to the browser like a sketch write.
+    static void writeNow(int id, int32_t target) {
+        if (!validId(id) || !_attached[id]) return;
+        _moving[id] = false; _segCount[id] = 0;   // immediate write cancels a gesture
+        int angle = clampAngle(id, (int)target);
+        _servos[id].write(angle);
+        _angles[id] = (int16_t)angle;
+        echoAngle(id, angle);
+    }
+
     // Echo a sketch-issued write to the browser so it sets its cached angle
     // exactly as if the browser had written it (CMD_SERVO_WRITE — silent sync).
     static void echoAngle(int id, int angle) {
@@ -503,6 +576,10 @@ public:
                 fl.addInt(i); fl.addInt(_limitMin[i]); fl.addInt(_limitMax[i]); fl.addInt(1);
                 Pardalote.sendFrame(clientNum, fl);
             }
+
+            // Tell a reconnecting browser this servo is mid-gesture (existence,
+            // not the schedule) so it can show "gesturing" until the DONE/state.
+            if (_gestureActive[i]) sendGestureState(clientNum, i, 1);
         }
     }
 
@@ -538,6 +615,11 @@ public:
                 _lastStepMs[i] = now;
             }
         }
+
+        // Gesture-active edge: broadcast on any 0<->positive _segCount change
+        // (start, natural finish, OR a superseding write that dropped it).
+        for (int i = 0; i < MAX_SERVOS; i++)
+            if (_attached[i] || _gestureActive[i]) updateGestureState(i);
 
         // Board-side periodic reads — per-client gating.
         for (int i = 0; i < MAX_SERVOS; i++) {
@@ -598,6 +680,19 @@ public:
     void write(int id, int angle)              const { Pardalote.command(DEVICE_SERVO, CMD_SERVO_WRITE, id, angle);            ServoExt::echoAngle(id, angle); }
     void writeTimed(int id, int angle, int ms) const { Pardalote.command(DEVICE_SERVO, CMD_SERVO_WRITE_TIMED, id, angle, ms); ServoExt::echoAngle(id, angle); }
     void stop(int id)                          const { Pardalote.command(DEVICE_SERVO, CMD_SERVO_STOP, id); }
+
+    // gesture(id, segs, count, flags?) — play an authored SEGMENT SCHEDULE on
+    // the board's own clock, the sketch-side twin of JS servo.gesture(). segs
+    // is a PardaloteSeg[] (degrees; absolute by default, flags = 0 for
+    // relative). For coordinated multi-servo motion use Pardalote.gesture().
+    void gesture(int id, const PardaloteSeg* segs, uint8_t count,
+                 uint8_t flags = GESTURE_FLAG_ABSOLUTE,
+                 const PardaloteGestureMod& mod = PardaloteGestureMod()) const {
+        ServoExt::startGesture(id, segs, count, flags, millis(), 0, mod);
+    }
+    // onGestureDone(id, cb) — the board-side whenDone(): cb(id) fires when the
+    // gesture's last segment lands. Chain gestures for headless sequences.
+    void onGestureDone(int id, PardaloteGestureDone cb) const { ServoExt::setOnGestureDone(id, cb); }
 };
 inline PardaloteServoAccess PardaloteServo;
 
@@ -605,5 +700,12 @@ inline PardaloteServoAccess PardaloteServo;
 // hook and ServoExt::loop for the per-iteration interpolation.
 INSTALL_EXTENSION(DEVICE_SERVO, ServoExt::handle, ServoExt::announce,
                   ServoExt::disconnect, ServoExt::loop)
+
+// Register the board-side gesture starter so Pardalote.gesture() can drive
+// servos in a coordinated group by DEVICE_SERVO id (see internal/gesture.h).
+INSTALL_GESTURE(DEVICE_SERVO, ServoExt::startGesture)
+
+// Register the immediate writer so Pardalote.write() can drive servos.
+INSTALL_WRITER(DEVICE_SERVO, ServoExt::writeNow)
 
 #endif

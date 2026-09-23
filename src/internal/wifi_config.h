@@ -40,25 +40,29 @@ struct PardaloteSecrets {
 };
 extern PardaloteSecrets _pardaloteSecrets;
 
-// Boot-watch probe. During the "press 'w' to configure" window, wifiConfigInit
-// feeds each received byte to this callback (supplied by the core, which owns
+// Boot-watch probe. While at the config menu prompt or while trying networks,
+// wifi_config feeds each received byte to this callback (supplied by the core, which owns
 // the USB envelope decoder). Return value:
 //   0 = nothing yet — keep waiting
 //   1 = a loose 'w' config keystroke — enter the config menu
-//   2 = a USB takeover probe completed — stop the window; the core skips WiFi
+//   2 = a USB takeover probe completed — stop; the core skips WiFi
 // nullptr disables the USB watch (only 'w' is honoured).
 typedef int (*PardaloteBootProbe)(uint8_t b);
 
 // Call at the top of setup(), before WiFi.begin().
-// Loads stored networks from EEPROM, optionally enters the Serial
-// config menu (forced if no networks at all are available). During the
-// config window it also watches USB for a takeover via `probe` (see above).
+// Loads stored networks from EEPROM and enters the Serial config menu only if
+// no networks at all are available (secrets.h or EEPROM). There is no boot
+// wait — 'w' is honoured during wifiConfigConnect instead. At the forced menu
+// it also watches USB for a takeover via `probe` (see above).
 void wifiConfigInit(WifiStore& s, PardaloteBootProbe probe = nullptr);
 
-// Tries each available network in order: secrets.h first (if bound), then
-// EEPROM entries. Returns true once connected. If all networks fail it drops
-// into the Serial config menu, then retries. While waiting for a connection it
-// also drains USB via `probe` (see PardaloteBootProbe): if a takeover arrives
-// it stops trying WiFi and returns FALSE, so the caller starts serial instead —
-// the fallback when WiFi is slow/unreachable but a browser wants USB.
+// Tries each available network in order — secrets.h first (if bound), then
+// EEPROM entries — 10 s each, looping back to the start indefinitely until one
+// connects (returns true). Before each attempt it prints "Press 'w' to
+// configure WiFi"; a 'w' at any point aborts the attempt and opens the config
+// menu, and connecting stays paused until the menu exits ('x'), then the cycle
+// restarts from the first network. It also drains USB via `probe` (see
+// PardaloteBootProbe): if a takeover arrives it stops trying WiFi and returns
+// FALSE, so the caller starts serial instead — the fallback when WiFi is
+// slow/unreachable but a browser wants USB.
 bool wifiConfigConnect(WifiStore& s, PardaloteBootProbe probe = nullptr);

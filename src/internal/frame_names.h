@@ -66,6 +66,8 @@ inline const char* pardaloteFrameName(uint16_t target, uint8_t cmd) {
                 case CMD_SERVO_STOP:               return "SERVO_STOP";
                 case CMD_SERVO_DONE:               return "SERVO_DONE";
                 case CMD_SERVO_SET_LIMITS:         return "SERVO_SET_LIMITS";
+                case CMD_SERVO_GESTURE:            return "SERVO_GESTURE";
+                case CMD_SERVO_GESTURE_STATE:      return "SERVO_GESTURE_STATE";
             }
             break;
         case DEVICE_ULTRASONIC:
@@ -116,6 +118,8 @@ inline const char* pardaloteFrameName(uint16_t target, uint8_t cmd) {
                 case CMD_STEPPER_SET_SWITCH_POS: return "STEPPER_SET_SWITCH_POS";
                 case CMD_STEPPER_SET_HOME:      return "STEPPER_SET_HOME";
                 case CMD_STEPPER_HARD_STOP:     return "STEPPER_HARD_STOP";
+                case CMD_STEPPER_GESTURE:       return "STEPPER_GESTURE";
+                case CMD_STEPPER_GESTURE_STATE: return "STEPPER_GESTURE_STATE";
             }
             break;
         case DEVICE_BUSSERVO:
@@ -137,6 +141,8 @@ inline const char* pardaloteFrameName(uint16_t target, uint8_t cmd) {
                 case CMD_BUSSERVO_DONE:        return "BUSSERVO_DONE";
                 case CMD_BUSSERVO_READ_LIMITS: return "BUSSERVO_READ_LIMITS";
                 case CMD_BUSSERVO_PRESENT:     return "BUSSERVO_PRESENT";
+                case CMD_BUSSERVO_GESTURE:     return "BUSSERVO_GESTURE";
+                case CMD_BUSSERVO_GESTURE_STATE: return "BUSSERVO_GESTURE_STATE";
             }
             break;
 
