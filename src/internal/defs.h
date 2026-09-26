@@ -22,7 +22,7 @@
 // Product version — the release humans see. Canonical copies live in
 // library.properties (Arduino) and package.json (JS); this string lets
 // a sketch print what it's running.
-#define PARDALOTE_VERSION "1.2.0"
+#define PARDALOTE_VERSION "1.3.0"
 
 // -------------------------------------------------------------------
 // ADC Resolution
