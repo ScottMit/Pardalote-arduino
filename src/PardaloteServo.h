@@ -406,6 +406,8 @@ public:
 
                 if (_attached[id]) _servos[id].detach();
                 _servos[id].attach(pin, minP, maxP);
+                _moving[id]   = false;   // no stale move / gesture from a previous instance on this id
+                _segCount[id] = 0;
                 _pins[id]     = (int16_t)pin;
                 _minPulse[id] = (int16_t)minP;
                 _maxPulse[id] = (int16_t)maxP;
@@ -423,6 +425,12 @@ public:
                     _attached[id] = false;
                     _pins[id]     = -1;
                     _limitSet[id] = false;
+                    // Drop any running timed move / gesture: loop() only pauses it while
+                    // detached, so a browser reusing this id (arduino.remove → add) would
+                    // otherwise see the OLD gesture resume on the new servo. The gesturing
+                    // edge (1→0) is still broadcast by loop()'s updateGestureState.
+                    _moving[id]   = false;
+                    _segCount[id] = 0;
                     ExtReadPoll* p = extPollFind(_polls, MAX_SERVOS, id);
                     if (p) p->instance = -1;   // stop any periodic read
                     Serial.print(F("Servo ")); Serial.print(id);
